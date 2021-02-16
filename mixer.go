@@ -1,50 +1,153 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 )
 
 type wav struct {
-    chunkid string
-    chunksize  int
-	format string
-	subchunk1id 
+	chunkID       [4]byte
+	chunkSize     uint32
+	format        [4]byte
+	subchunk1ID   [4]byte
+	subchunk1Size uint32
+	audioFormat   uint16
+	numChannels   uint16
+	sampleRate    uint32
+	byteRate      uint32
+	blockAlign    uint16
+	bitsPerSample uint16
+	subchunk2ID   [4]byte
+	subchunk2Size uint32
+	data          [][]byte
+	// Calculated fields
+	NumSamples uint32
+	SampleSize uint16
+	Duration   float64
 }
-struct HEADER {
-		unsigned char riff[4];                      // RIFF string
-		unsigned int overall_size   ;               // overall size of file in bytes
-		unsigned char wave[4];                      // WAVE string
-		unsigned char fmt_chunk_marker[4];          // fmt string with trailing null char
-		unsigned int length_of_fmt;                 // length of the format data
-		unsigned int format_type;                   // format type. 1-PCM, 3- IEEE float, 6 - 8bit A law, 7 - 8bit mu law
-		unsigned int channels;                      // no.of channels
-		unsigned int sample_rate;                   // sampling rate (blocks per second)
-		unsigned int byterate;                      // SampleRate * NumChannels * BitsPerSample/8
-		unsigned int block_align;                   // NumChannels * BitsPerSample/8
-		unsigned int bits_per_sample;               // bits per sample, 8- 8bits, 16- 16 bits etc
-		unsigned char data_chunk_header [4];        // DATA string or FLLR string
-		unsigned int data_size;                     // NumSamples * NumChannels * BitsPerSample/8 - size of the next chunk that will be read
-	};
-	
+
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
 }
 
-func main() {
-	myfile := "untitled.wav"
-
-	f, err := os.Open(myfile)
-	check(err)
-
-	for i := 0; i < 4; i++ {
-		buf := make([]byte, 4)
-		n, err := f.Read(buf)
-		check(err)
-		fmt.Printf("%s\n", string(buf[:n]))
+func readWAV(r io.Reader, object *wav) {
+	binary.Read(r, binary.BigEndian, &object.chunkID)
+	binary.Read(r, binary.LittleEndian, &object.chunkSize)
+	binary.Read(r, binary.BigEndian, &object.format)
+	binary.Read(r, binary.BigEndian, &object.subchunk1ID)
+	binary.Read(r, binary.LittleEndian, &object.subchunk1Size)
+	binary.Read(r, binary.LittleEndian, &object.audioFormat)
+	binary.Read(r, binary.LittleEndian, &object.numChannels)
+	binary.Read(r, binary.LittleEndian, &object.sampleRate)
+	binary.Read(r, binary.LittleEndian, &object.byteRate)
+	binary.Read(r, binary.LittleEndian, &object.blockAlign)
+	binary.Read(r, binary.LittleEndian, &object.bitsPerSample)
+	binary.Read(r, binary.BigEndian, &object.subchunk2ID)
+	binary.Read(r, binary.LittleEndian, &object.subchunk2Size)
+	object.NumSamples = (8 * object.subchunk2Size) / uint32((object.numChannels * object.bitsPerSample))
+	object.SampleSize = (object.numChannels * object.bitsPerSample) / 8
+	object.Duration = float64(object.subchunk2Size) / float64(object.byteRate)
+	for i := 0; i < int(object.NumSamples); i++ {
+		sample := make([]byte, int(object.SampleSize))
+		binary.Read(r, binary.LittleEndian, &sample)
+		object.data = append(object.data, sample)
 	}
+}
+func writeWAV(r io.Writer, object wav) {
+	binary.Write(r, binary.BigEndian, object.chunkID)
+	binary.Write(r, binary.LittleEndian, object.chunkSize)
+	binary.Write(r, binary.BigEndian, object.format)
+	binary.Write(r, binary.BigEndian, object.subchunk1ID)
+	binary.Write(r, binary.LittleEndian, object.subchunk1Size)
+	binary.Write(r, binary.LittleEndian, object.audioFormat)
+	binary.Write(r, binary.LittleEndian, object.numChannels)
+	binary.Write(r, binary.LittleEndian, object.sampleRate)
+	binary.Write(r, binary.LittleEndian, object.byteRate)
+	binary.Write(r, binary.LittleEndian, object.blockAlign)
+	binary.Write(r, binary.LittleEndian, object.bitsPerSample)
+	binary.Write(r, binary.BigEndian, object.subchunk2ID)
+	binary.Write(r, binary.LittleEndian, object.subchunk2Size)
+	for i := 0; i < len(object.data); i++ {
+		binary.Write(r, binary.LittleEndian, object.data[i])
+	}
+}
+
+func dumpWAVHeader(object wav, more bool) {
+	fmt.Printf("File size: %.2fKB\n", float64(object.chunkSize)/1000)
+	fmt.Printf("Number of samples: %d\n", object.NumSamples)
+	fmt.Printf("Size of each sample: %d bytes\n", object.SampleSize)
+	fmt.Printf("Duration of file: %fs\n", object.Duration)
+	if more {
+		fmt.Printf("%-14s %s\n", "chunkID:", object.chunkID)
+		fmt.Printf("%-14s %d\n", "chunkSize:", object.chunkSize)
+		fmt.Printf("%-14s %s\n", "format:", object.format)
+		fmt.Printf("%-14s %s\n", "subchunk1ID:", object.subchunk1ID)
+		fmt.Printf("%-14s %d\n", "subchunk1Size:", object.subchunk1Size)
+		fmt.Printf("%-14s %d\n", "audioFormat:", object.audioFormat)
+		fmt.Printf("%-14s %d\n", "numChannels:", object.numChannels)
+		fmt.Printf("%-14s %d\n", "sampleRate:", object.sampleRate)
+		fmt.Printf("%-14s %d\n", "byteRate:", object.byteRate)
+		fmt.Printf("%-14s %d\n", "blockAlign:", object.blockAlign)
+		fmt.Printf("%-14s %d\n", "bitsPerSample:", object.bitsPerSample)
+		fmt.Printf("%-14s %s\n", "subchunk2ID:", object.subchunk2ID)
+		fmt.Printf("%-14s %d\n", "subchunk2Size:", object.subchunk2Size)
+	}
+}
+
+func mix(t1 wav, t2 wav) wav {
+	var track, longerTrack, shorterTrack wav
+	if t1.NumSamples >= t2.NumSamples {
+		longerTrack = t1
+		shorterTrack = t2
+	} else {
+		longerTrack = t2
+		shorterTrack = t1
+	}
+
+	track = longerTrack
+	for i := 0; i < int(longerTrack.NumSamples); i++ {
+		sample := make([]byte, 2)
+		var sum int32
+		if i < int(shorterTrack.NumSamples) {
+			sum = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i])) + int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
+		} else {
+			sum = int32(binary.LittleEndian.Uint16(longerTrack.data[i]))
+		}
+		if sum > 32767 {
+			sum = 32767
+		}
+		// fmt.Printf("%d -- %d + %d\n", int16(sum), int16(binary.LittleEndian.Uint16(longerTrack.data[i])), int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
+		binary.LittleEndian.PutUint16(sample, uint16(sum))
+		track.data[i] = sample
+	}
+	return track
+}
+
+func main() {
+	file1 := os.Args[1]
+	file2 := os.Args[2]
+	fmt.Printf("Mixing %s and %s\n", file1, file2)
+	f, err := os.Open(file1)
+	check(err)
+	var track1 wav
+	readWAV(f, &track1)
+	fmt.Printf("-------\nTrack 1 details:\n")
+	// dumpWAVHeader(track1, true)
+
+	f, err = os.Open(file2)
+	var track2 wav
+	readWAV(f, &track2)
+	fmt.Printf("-------\nTrack 2 details:\n")
+	// dumpWAVHeader(track2, true)
+
+	new := mix(track1, track2)
+	newfile, err := os.Create("new.wav")
+	check(err)
+	writeWAV(newfile, new)
 
 	f.Close()
 }
