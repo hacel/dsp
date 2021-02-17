@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 )
 
 type wav struct {
@@ -57,6 +58,7 @@ func readWAV(r io.Reader, object *wav) {
 		object.data = append(object.data, sample)
 	}
 }
+
 func writeWAV(r io.Writer, object wav) {
 	binary.Write(r, binary.BigEndian, object.chunkID)
 	binary.Write(r, binary.LittleEndian, object.chunkSize)
@@ -107,20 +109,20 @@ func mix(t1 wav, t2 wav) wav {
 		longerTrack = t2
 		shorterTrack = t1
 	}
-
 	track = longerTrack
 	for i := 0; i < int(longerTrack.NumSamples); i++ {
 		sample := make([]byte, 2)
 		var sum int32
 		if i < int(shorterTrack.NumSamples) {
-			sum = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i])) + int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
+			sum = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i]))) + int32(int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
 		} else {
-			sum = int32(binary.LittleEndian.Uint16(longerTrack.data[i]))
+			sum = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i])))
 		}
 		if sum > 32767 {
 			sum = 32767
+		} else if sum < -32768 {
+			sum = -32768
 		}
-		// fmt.Printf("%d -- %d + %d\n", int16(sum), int16(binary.LittleEndian.Uint16(longerTrack.data[i])), int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
 		binary.LittleEndian.PutUint16(sample, uint16(sum))
 		track.data[i] = sample
 	}
@@ -128,21 +130,21 @@ func mix(t1 wav, t2 wav) wav {
 }
 
 func main() {
-	file1 := os.Args[1]
-	file2 := os.Args[2]
+	file1dir, file1 := path.Split(os.Args[1])
+	file2dir, file2 := path.Split(os.Args[2])
 	fmt.Printf("Mixing %s and %s\n", file1, file2)
-	f, err := os.Open(file1)
+	f, err := os.Open(file1dir + file1)
 	check(err)
 	var track1 wav
 	readWAV(f, &track1)
-	fmt.Printf("-------\nTrack 1 details:\n")
-	// dumpWAVHeader(track1, true)
+	fmt.Printf("---------------\n%s details:\n", file1)
+	dumpWAVHeader(track1, false)
 
-	f, err = os.Open(file2)
+	f, err = os.Open(file2dir + file2)
 	var track2 wav
 	readWAV(f, &track2)
-	fmt.Printf("-------\nTrack 2 details:\n")
-	// dumpWAVHeader(track2, true)
+	fmt.Printf("---------------\n%s details:\n", file2)
+	dumpWAVHeader(track2, false)
 
 	new := mix(track1, track2)
 	newfile, err := os.Create("new.wav")
