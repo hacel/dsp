@@ -2,13 +2,9 @@ package main
 
 import (
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"io"
 	"math"
-	"os"
-	"path"
-	"strconv"
 )
 
 type wav struct {
@@ -114,7 +110,7 @@ func mix(t1 wav, t2 wav) wav {
 	}
 	track = longerTrack
 	for i := 0; i < int(longerTrack.NumSamples); i++ {
-		signal := make([]byte, 2) // change this
+		signal := make([]byte, track.SampleSize)
 		var sample int32
 		if i < int(shorterTrack.NumSamples) {
 			sample = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i]))) + int32(int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
@@ -143,7 +139,7 @@ func normalize(track wav, desiredPeak float64) wav {
 	}
 	normNum := base / peak
 	for i := 0; i < int(track.NumSamples); i++ {
-		signal := make([]byte, 2) // change this
+		signal := make([]byte, track.SampleSize)
 		sample := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
 		sample *= normNum
 		binary.LittleEndian.PutUint16(signal, uint16(sample))
@@ -152,56 +148,19 @@ func normalize(track wav, desiredPeak float64) wav {
 	return track
 }
 
-func main() {
-	outfilename := flag.String("o", "out.wav", "usage")
-	flag.Parse()
-
-	operation := flag.Arg(0)
-	switch operation {
-	case "normalize":
-		file1dir, file1name := path.Split(flag.Arg(1))
-		dBFS, _ := strconv.Atoi(flag.Arg(2))
-		fmt.Printf("Noramlizing %s to %d dBFS\n", file1name, dBFS)
-
-		f, err := os.Open(file1dir + file1name)
-		check(err)
-		var track1 wav
-		readWAV(f, &track1)
-		fmt.Printf("---------------\n%s details:\n", file1name)
-		dumpWAVHeader(track1, true)
-
-		new := normalize(track1, float64(dBFS))
-		outfile, err := os.Create(*outfilename)
-		check(err)
-		writeWAV(outfile, new)
-		fmt.Printf("Normalized into %s.\n", *outfilename)
-
-		f.Close()
-
-	case "mix":
-		file1dir, file1name := path.Split(flag.Arg(1))
-		file2dir, file2name := path.Split(flag.Arg(2))
-		fmt.Printf("Mixing %s and %s\n", file1name, file2name)
-
-		f, err := os.Open(file1dir + file1name)
-		check(err)
-		var track1 wav
-		readWAV(f, &track1)
-		fmt.Printf("---------------\n%s details:\n", file1name)
-		dumpWAVHeader(track1, true)
-
-		f, err = os.Open(file2dir + file2name)
-		var track2 wav
-		readWAV(f, &track2)
-		fmt.Printf("---------------\n%s details:\n", file2name)
-		dumpWAVHeader(track2, false)
-
-		new := mix(track1, track2)
-		outfile, err := os.Create(*outfilename)
-		check(err)
-		writeWAV(outfile, new)
-		fmt.Printf("Mixed into %s.\n", *outfilename)
-		f.Close()
+func compress(track wav, thresh float64, ratio int) wav {
+	sigThresh := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (thresh/20))
+	for i := 0; i < int(track.NumSamples); i++ {
+		signal := make([]byte, track.SampleSize)
+		sample := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
+		// fmt.Printf("%f - %f / %f - %f ==== %f\n", sample, sigThresh, float64(ratio), sigThresh, (sample-sigThresh)/float64(ratio)-sigThresh)
+		if sample >= 0 {
+			sample = (sample-sigThresh)/float64(ratio) + sigThresh
+		} else {
+			sample = (sample+sigThresh)/float64(ratio) - sigThresh
+		}
+		binary.LittleEndian.PutUint16(signal, uint16(sample))
+		track.data[i] = signal
 	}
-
+	return track
 }

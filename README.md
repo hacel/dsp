@@ -4,7 +4,10 @@
 - Error checking
 - Use log package
 Mixing works but clipping issues
+- Test for stereo
 
+compression:
+out = (in - thresh) / ratio + thresh
 
 
 normalization:
@@ -12,3 +15,7 @@ normalization:
 2. find peak in track
 3. divide baseline amplitude by tracks peak amplitude
 4. multiply every single in the track by the result
+
+mixing:
+1. add two signals and watch for overflow
+2. if result exceeds max then set to max
