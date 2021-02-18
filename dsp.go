@@ -156,23 +156,53 @@ func normalize(track wav, desiredPeak float64) wav {
 	return track
 }
 
-func compress(track wav, thresh float64, ratio int, makeup float64) wav {
-	sigThresh := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (thresh/20))
-	var period []float64
+func compress(track wav, thresh float64, R int, makeup float64, kneeWidth float64) wav {
+	T := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (thresh/20))
+	W := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (kneeWidth/20))
+	// var period []float64
 	for i := 0; i < int(track.NumSamples); i++ {
+		signed := false
 		signal := make([]byte, track.SampleSize)
-		sample := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
-		if len(period) == 500 {
-			period = period[1:]
+		x := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
+		if x < 0 {
+			signed = true
+			x = math.Abs(x)
 		}
-		period = append(period, sample)
-		sigRMS := rms(period)
-		if sigRMS > sigThresh {
-			sample = sigThresh + (sample-sigThresh)/float64(ratio)
-		} else if sigRMS < -sigThresh {
-			sample = -sigThresh + (sample+sigThresh)/float64(ratio)
+		// ----- RMS CALC
+		// if len(period) == int(track.sampleRate)/2000 {
+		// 	period = period[1:]
+		// }
+		// period = append(period, x)
+		// sigRMS := rms(period)
+
+		// ----- HARD RMS
+		// if sigRMS > T {
+		// 	if x >= 0 {
+		// 		x = T + (x-T)/float64(R)
+		// 	} else if x < 0 {
+		// 		x = -(T + (math.Abs(x)-T)/float64(R))
+		// 	}
+		// }
+
+		// ----- HARD PEAK
+		// if x > T {
+		// 	x = T + (x-T)/float64(R)
+		// } else if x < -T {
+		// 	x = -(T + (math.Abs(x)-T)/float64(R))
+		// }
+
+		// ------ SMOOTH PEAK
+		if x-T < -W/2 {
+		} else if math.Abs(x-T) <= W/2 {
+			x = x + ((1/float64(R)-1)*math.Pow(x-T+W/2, 2))/(W*2)
+		} else if x-T > W/2 {
+			x = T + (x-T)/float64(R)
 		}
-		binary.LittleEndian.PutUint16(signal, uint16(sample))
+
+		if signed {
+			x *= -1
+		}
+		binary.LittleEndian.PutUint16(signal, uint16(x))
 		track.data[i] = signal
 	}
 	if makeup != 1.0 {

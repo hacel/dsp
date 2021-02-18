@@ -9,16 +9,17 @@ Mixing works but clipping issues
 compression:
 out = (in - thresh) / ratio + thresh
 
+- too much distortion
+
 threshold
 ratio
-rms compression works fine with arbitrary sample number
-peak compression has distortion
+normalize to 0db
+rms & peak
+soft knee
 
-noise floor
 attack time
 release time
-normalize to 0db
-compress base 
+noise floor
 
 
 
