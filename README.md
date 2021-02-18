@@ -9,6 +9,18 @@ Mixing works but clipping issues
 compression:
 out = (in - thresh) / ratio + thresh
 
+threshold
+ratio
+rms compression works fine with arbitrary sample number
+peak compression has distortion
+
+noise floor
+attack time
+release time
+normalize to 0db
+compress base 
+
+
 
 normalization:
 1. find baseline signal amplitude from bitspersample and desired peak. Ex: 32767*10^(-1/20)

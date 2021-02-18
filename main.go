@@ -58,10 +58,16 @@ func main() {
 		fmt.Printf("Normalized into %s.\n", *outfilename)
 
 		f.Close()
+
 	case "compress":
 		file1dir, file1name := path.Split(flag.Arg(1))
 		dBFS, _ := strconv.Atoi(flag.Arg(2))
 		ratio, _ := strconv.Atoi(flag.Arg(3))
+		makeup := 1
+		if flag.Arg(4) != "" {
+			makeup, _ = strconv.Atoi(flag.Arg(4))
+		}
+		fmt.Printf("%d mak\n", makeup)
 		fmt.Printf("Compressing %s up to %d dBFS with %d ratio\n", file1name, dBFS, ratio)
 
 		f, err := os.Open(file1dir + file1name)
@@ -71,7 +77,7 @@ func main() {
 		fmt.Printf("---------------\n%s details:\n", file1name)
 		dumpWAVHeader(track1, true)
 
-		new := compress(track1, float64(dBFS), ratio)
+		new := compress(track1, float64(dBFS), ratio, float64(makeup))
 		outfile, err := os.Create(*outfilename)
 		check(err)
 		writeWAV(outfile, new)

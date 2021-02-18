@@ -34,6 +34,14 @@ func check(e error) {
 	}
 }
 
+func rms(val []float64) float64 {
+	var sum float64
+	for _, s := range val {
+		sum += s
+	}
+	return sum / float64(len(val))
+}
+
 func readWAV(r io.Reader, object *wav) {
 	binary.Read(r, binary.BigEndian, &object.chunkID)
 	binary.Read(r, binary.LittleEndian, &object.chunkSize)
@@ -148,19 +156,28 @@ func normalize(track wav, desiredPeak float64) wav {
 	return track
 }
 
-func compress(track wav, thresh float64, ratio int) wav {
+func compress(track wav, thresh float64, ratio int, makeup float64) wav {
 	sigThresh := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (thresh/20))
+	var period []float64
 	for i := 0; i < int(track.NumSamples); i++ {
 		signal := make([]byte, track.SampleSize)
 		sample := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
-		// fmt.Printf("%f - %f / %f - %f ==== %f\n", sample, sigThresh, float64(ratio), sigThresh, (sample-sigThresh)/float64(ratio)-sigThresh)
-		if sample >= 0 {
-			sample = (sample-sigThresh)/float64(ratio) + sigThresh
-		} else {
-			sample = (sample+sigThresh)/float64(ratio) - sigThresh
+		if len(period) == 500 {
+			period = period[1:]
+		}
+		period = append(period, sample)
+		sigRMS := rms(period)
+		if sigRMS > sigThresh {
+			sample = sigThresh + (sample-sigThresh)/float64(ratio)
+		} else if sigRMS < -sigThresh {
+			sample = -sigThresh + (sample+sigThresh)/float64(ratio)
 		}
 		binary.LittleEndian.PutUint16(signal, uint16(sample))
 		track.data[i] = signal
+	}
+	if makeup != 1.0 {
+		fmt.Printf("Normalizing...\n")
+		track = normalize(track, makeup)
 	}
 	return track
 }
