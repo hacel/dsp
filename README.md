@@ -6,6 +6,14 @@
 Mixing works but clipping issues
 - Test for stereo
 
+- refactor "object oriented"
+ - use path.base
+ - new instance using :=
+ defer
+ - maybe writewavfile/readwavfile(path)
+- defer fileclose
+
+
 compression:
 out = (in - thresh) / ratio + thresh
 

@@ -5,9 +5,25 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 )
 
-type wav struct {
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+func rms(val []float64) float64 {
+	var sum float64
+	for _, s := range val {
+		sum += s
+	}
+	return sum / float64(len(val))
+}
+
+// WAV is a struct to hold wave file format data
+type WAV struct {
 	chunkID       [4]byte
 	chunkSize     uint32
 	format        [4]byte
@@ -28,21 +44,12 @@ type wav struct {
 	Duration   float64
 }
 
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
+// NewWAV creates new WAV object and returns a pointer to it
+func NewWAV() *WAV {
+	return &WAV{}
 }
 
-func rms(val []float64) float64 {
-	var sum float64
-	for _, s := range val {
-		sum += s
-	}
-	return sum / float64(len(val))
-}
-
-func readWAV(r io.Reader, object *wav) {
+func (object *WAV) read(r io.Reader) {
 	binary.Read(r, binary.BigEndian, &object.chunkID)
 	binary.Read(r, binary.LittleEndian, &object.chunkSize)
 	binary.Read(r, binary.BigEndian, &object.format)
@@ -60,13 +67,20 @@ func readWAV(r io.Reader, object *wav) {
 	object.SampleSize = (object.numChannels * object.bitsPerSample) / 8
 	object.Duration = float64(object.subchunk2Size) / float64(object.byteRate)
 	for i := 0; i < int(object.NumSamples); i++ {
-		sample := make([]byte, int(object.SampleSize))
-		binary.Read(r, binary.LittleEndian, &sample)
-		object.data = append(object.data, sample)
+		x := make([]byte, int(object.SampleSize))
+		binary.Read(r, binary.LittleEndian, &x)
+		object.data = append(object.data, x)
 	}
 }
 
-func writeWAV(r io.Writer, object wav) {
+func (object *WAV) readFile(path string) {
+	f, err := os.Open(path)
+	check(err)
+	defer f.Close()
+	object.read(f)
+}
+
+func (object *WAV) write(r io.Writer) {
 	binary.Write(r, binary.BigEndian, object.chunkID)
 	binary.Write(r, binary.LittleEndian, object.chunkSize)
 	binary.Write(r, binary.BigEndian, object.format)
@@ -85,7 +99,14 @@ func writeWAV(r io.Writer, object wav) {
 	}
 }
 
-func dumpWAVHeader(object wav, more bool) {
+func (object *WAV) writeFile(path string) {
+	f, err := os.Create(path)
+	check(err)
+	defer f.Close()
+	object.write(f)
+}
+
+func (object *WAV) dumpHeader(more bool) {
 	fmt.Printf("File size: %.2fKB\n", float64(object.chunkSize)/1000)
 	fmt.Printf("Number of samples: %d\n", object.NumSamples)
 	fmt.Printf("Size of each sample: %d bytes\n", object.SampleSize)
@@ -107,8 +128,8 @@ func dumpWAVHeader(object wav, more bool) {
 	}
 }
 
-func mix(t1 wav, t2 wav) wav {
-	var track, longerTrack, shorterTrack wav
+func (object *WAV) mix(t1 *WAV, t2 *WAV) {
+	var longerTrack, shorterTrack *WAV
 	if t1.NumSamples >= t2.NumSamples {
 		longerTrack = t1
 		shorterTrack = t2
@@ -116,60 +137,58 @@ func mix(t1 wav, t2 wav) wav {
 		longerTrack = t2
 		shorterTrack = t1
 	}
-	track = longerTrack
+	*object = *longerTrack
 	for i := 0; i < int(longerTrack.NumSamples); i++ {
-		signal := make([]byte, track.SampleSize)
-		var sample int32
+		signal := make([]byte, object.SampleSize)
+		var x int32
 		if i < int(shorterTrack.NumSamples) {
-			sample = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i]))) + int32(int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
+			x = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i]))) + int32(int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
 		} else {
-			sample = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i])))
+			x = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i])))
 		}
-		if sample > 32767 {
-			sample = 32767
-		} else if sample < -32768 {
-			sample = -32768
+		if x > 32767 {
+			x = 32767
+		} else if x < -32768 {
+			x = -32768
 		}
-		binary.LittleEndian.PutUint16(signal, uint16(sample))
-		track.data[i] = signal
+		binary.LittleEndian.PutUint16(signal, uint16(x))
+		object.data[i] = signal
 	}
-	return track
 }
 
-func normalize(track wav, desiredPeak float64) wav {
-	base := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (desiredPeak/20))
+func (object *WAV) normalize(desiredPeak float64) {
+	base := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (desiredPeak/20))
 	var peak float64 = 0
-	for i := 0; i < int(track.NumSamples); i++ {
-		sample := math.Abs(float64(int16(binary.LittleEndian.Uint16(track.data[i]))))
-		if sample > peak {
-			peak = sample
+	for i := 0; i < int(object.NumSamples); i++ {
+		x := math.Abs(float64(int16(binary.LittleEndian.Uint16(object.data[i]))))
+		if x > peak {
+			peak = x
 		}
 	}
 	normNum := base / peak
-	for i := 0; i < int(track.NumSamples); i++ {
-		signal := make([]byte, track.SampleSize)
-		sample := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
-		sample *= normNum
-		binary.LittleEndian.PutUint16(signal, uint16(sample))
-		track.data[i] = signal
+	for i := 0; i < int(object.NumSamples); i++ {
+		signal := make([]byte, object.SampleSize)
+		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		x *= normNum
+		binary.LittleEndian.PutUint16(signal, uint16(x))
+		object.data[i] = signal
 	}
-	return track
 }
 
-func compress(track wav, thresh float64, R int, makeup float64, kneeWidth float64) wav {
-	T := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (thresh/20))
-	W := math.Pow(2, float64(track.bitsPerSample-1)) * math.Pow(10, (kneeWidth/20))
+func (object *WAV) compress(thresh float64, R int, makeup float64, kneeWidth float64) {
+	T := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (thresh/20))
+	W := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (kneeWidth/20))
 	// var period []float64
-	for i := 0; i < int(track.NumSamples); i++ {
+	for i := 0; i < int(object.NumSamples); i++ {
 		signed := false
-		signal := make([]byte, track.SampleSize)
-		x := float64(int16(binary.LittleEndian.Uint16(track.data[i])))
+		signal := make([]byte, object.SampleSize)
+		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
 		if x < 0 {
 			signed = true
 			x = math.Abs(x)
 		}
 		// ----- RMS CALC
-		// if len(period) == int(track.sampleRate)/2000 {
+		// if len(period) == int(object.sampleRate)/2000 {
 		// 	period = period[1:]
 		// }
 		// period = append(period, x)
@@ -203,11 +222,10 @@ func compress(track wav, thresh float64, R int, makeup float64, kneeWidth float6
 			x *= -1
 		}
 		binary.LittleEndian.PutUint16(signal, uint16(x))
-		track.data[i] = signal
+		object.data[i] = signal
 	}
 	if makeup != 1.0 {
 		fmt.Printf("Normalizing...\n")
-		track = normalize(track, makeup)
+		object.normalize(makeup)
 	}
-	return track
 }
