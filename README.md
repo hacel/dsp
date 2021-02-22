@@ -3,21 +3,16 @@
 ## TODO
 - Error checking
 - Use log package
-Mixing works but clipping issues
 - Test for stereo
-
-- refactor "object oriented"
- - use path.base
- - new instance using :=
- defer
- - maybe writewavfile/readwavfile(path)
-- defer fileclose
 
 
 compression:
 out = (in - thresh) / ratio + thresh
 
+* fix RMS function
+
 - too much distortion
+soft knee doesnt have much distortion
 
 threshold
 ratio

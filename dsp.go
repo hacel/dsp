@@ -14,12 +14,20 @@ func check(e error) {
 	}
 }
 
-func rms(val []float64) float64 {
+func avg(val []float64) float64 {
 	var sum float64
 	for _, s := range val {
 		sum += s
 	}
 	return sum / float64(len(val))
+}
+
+func rms(val []float64) float64 { // THIS IS AVG?
+	var sum float64
+	for _, s := range val {
+		sum += math.Pow(s, 2)
+	}
+	return math.Sqrt(sum / float64(len(val)))
 }
 
 // WAV is a struct to hold wave file format data
@@ -177,7 +185,7 @@ func (object *WAV) normalize(desiredPeak float64) {
 
 func (object *WAV) compress(thresh float64, R int, makeup float64, kneeWidth float64) {
 	T := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (thresh/20))
-	W := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (kneeWidth/20))
+	// W := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (kneeWidth/20))
 	// var period []float64
 	for i := 0; i < int(object.NumSamples); i++ {
 		signed := false
@@ -196,27 +204,21 @@ func (object *WAV) compress(thresh float64, R int, makeup float64, kneeWidth flo
 
 		// ----- HARD RMS
 		// if sigRMS > T {
-		// 	if x >= 0 {
-		// 		x = T + (x-T)/float64(R)
-		// 	} else if x < 0 {
-		// 		x = -(T + (math.Abs(x)-T)/float64(R))
-		// 	}
+		// 	x = T + (x-T)/float64(R)
 		// }
 
 		// ----- HARD PEAK
-		// if x > T {
-		// 	x = T + (x-T)/float64(R)
-		// } else if x < -T {
-		// 	x = -(T + (math.Abs(x)-T)/float64(R))
-		// }
-
-		// ------ SMOOTH PEAK
-		if x-T < -W/2 {
-		} else if math.Abs(x-T) <= W/2 {
-			x = x + ((1/float64(R)-1)*math.Pow(x-T+W/2, 2))/(W*2)
-		} else if x-T > W/2 {
+		if x > T {
 			x = T + (x-T)/float64(R)
 		}
+
+		// ------ SMOOTH PEAK
+		// if x-T < -W/2 {
+		// } else if math.Abs(x-T) <= W/2 {
+		// 	x = x + ((1/float64(R)-1)*math.Pow(x-T+W/2, 2))/(W*2)
+		// } else if x-T > W/2 {
+		// 	x = T + (x-T)/float64(R)
+		// }
 
 		if signed {
 			x *= -1
@@ -227,5 +229,183 @@ func (object *WAV) compress(thresh float64, R int, makeup float64, kneeWidth flo
 	if makeup != 1.0 {
 		fmt.Printf("Normalizing...\n")
 		object.normalize(makeup)
+	}
+}
+
+func (object *WAV) lowpass() {
+	var period []float64
+	for i := 0; i < int(object.NumSamples)-5; i++ {
+		signal := make([]byte, object.SampleSize)
+		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		// period = append(period, float64(int16(binary.LittleEndian.Uint16(v))))
+		// if len(period) == 5 {
+		// 	period = period[1:]
+		// }
+		// period = append(period, float64(int16(binary.LittleEndian.Uint16(object.data[i+5]))))
+
+		if len(period) == 5 {
+			period = period[1:]
+		}
+		period = append(period, x)
+		sigAvg := avg(period)
+
+		binary.LittleEndian.PutUint16(signal, uint16(sigAvg))
+		object.data[i] = signal
+	}
+}
+
+func (object *WAV) windowedSinc() {
+	FC := 0.04
+	M := 100 // M = BW / 4
+	kernel := make([]float64, M)
+	for i := range kernel {
+		if i-M/2 == 0 {
+			kernel[i] = 2 * math.Pi * FC
+		} else {
+			kernel[i] = math.Sin(2*math.Pi*FC*float64(i-M/2)) / float64(i-M/2)
+		}
+		kernel[i] = kernel[i] * (0.54 - 0.46*math.Cos(2*math.Pi*float64(i)/float64(M)))
+	}
+	var sum float64 = 0
+	for i := range kernel {
+		sum += kernel[i]
+	}
+	for i := range kernel {
+		kernel[i] /= sum
+	}
+
+	var filteredData [][]byte
+	for j := M; j < int(object.NumSamples); j++ {
+		signal := make([]byte, object.SampleSize)
+		y := 0.0
+		x := 0.0
+		for i := range kernel {
+			x = float64(int16(binary.LittleEndian.Uint16(object.data[j-i])))
+			y += x * kernel[i]
+		}
+		binary.LittleEndian.PutUint16(signal, uint16(y))
+		filteredData = append(filteredData, signal)
+	}
+	object.data = filteredData
+}
+
+func (object *WAV) highpass() {
+	var period []float64
+	for i := 0; i < int(object.NumSamples); i++ {
+		signal := make([]byte, object.SampleSize)
+		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+
+		if len(period) == 3 {
+			period = period[1:]
+			x = x + period[len(period)-2] + -2*period[len(period)-1]
+		}
+		period = append(period, x)
+
+		binary.LittleEndian.PutUint16(signal, uint16(x))
+		object.data[i] = signal
+	}
+}
+
+func cheb(FC, PR, LH, NP, P float64) (float64, float64, float64, float64, float64) {
+	RP := -math.Cos(math.Pi/(NP*2) + (P-1)*math.Pi/NP)
+	IP := math.Sin(math.Pi/(NP*2) + (P-1)*math.Pi/NP)
+	if PR != 0 {
+		ES := math.Sqrt(math.Pow((100/(100-PR)), 2) - 1)
+		VX := (1/NP)*math.Log(1/ES) + math.Sqrt(math.Pow(1/ES, 2)+1)
+		KX := (1/NP)*math.Log(1/ES) + math.Sqrt(math.Pow(1/ES, 2)-1)
+		KX = (math.Exp(KX) + math.Exp(-KX)) / 2
+		RP = RP * ((math.Exp(VX) - math.Exp(-VX)) / 2) / KX
+		IP = IP * ((math.Exp(VX) + math.Exp(-VX)) / 2) / KX
+	}
+	// fmt.Printf("RP=%f, IP=%f\n", RP, IP)
+
+	T := 2 * math.Tan(0.5)
+	W := 2 * math.Pi * FC
+	M := math.Pow(RP, 2) + math.Pow(IP, 2)
+	D := 4 - 4*RP*T + M*math.Pow(T, 2)
+	X0 := math.Pow(T, 2) / D
+	X1 := 2 * math.Pow(T, 2) / D
+	X2 := math.Pow(T, 2) / D
+	Y1 := (8 - 2*M*math.Pow(T, 2)) / D
+	Y2 := (-4 - 4*RP*T - M*math.Pow(T, 2)) / D
+	// fmt.Printf("T=%f, W=%f, M=%f, D=%f\n, X0=%f, X1=%f, X2=%f, Y1=%f, Y2=%f\n", T, W, M, D, X0, X1, X2, Y1, Y2)
+
+	K := 0.0
+	if LH == 1 {
+		K = -math.Cos(W/2+0.5) / math.Cos(W/2-0.5)
+	} else {
+		K = math.Sin(0.5-W/2) / math.Sin(0.5+W/2)
+	}
+	D = 1 + Y1*K - Y2*math.Pow(K, 2)
+
+	A0 := (X0 - X1*K + X2*math.Pow(K, 2)) / D
+	A1 := (-2*X0*K + X1 + X1*math.Pow(K, 2) - 2*X2*K) / D
+	A2 := (X0*math.Pow(K, 2) - X1*K + X2) / D
+	B1 := (2*K + Y1 + Y1*math.Pow(K, 2) - 2*Y2*K) / D
+	B2 := (-(math.Pow(K, 2)) - Y1*K + Y2) / D
+
+	if LH == 1 {
+		A1 = -A1
+		B1 = -B1
+	}
+	// fmt.Printf("A0=%f, A1=%f, A2=%f, B1=%f, B2=%f\n, K=%f, D=%f\n", A0, A1, A2, B1, B2, K, D)
+	return A0, A1, A2, B1, B2
+}
+
+func (object *WAV) chebyshev() {
+	var A [22]float64
+	var B [22]float64
+	var TA [22]float64
+	var TB [22]float64
+
+	A[2] = 1.0
+	B[2] = 1.0
+
+	FC := 0.1 // Cut off
+	LH := 0.0 // 0: LP, 1: HP
+	PR := 0.0 // Percent ripple
+	NP := 4.0 // Number of poles
+
+	for P := 2; float64(P) < NP/2; P++ {
+		A0, A1, A2, B1, B2 := cheb(FC, PR, LH, NP, float64(P))
+		for I := 0; I < 22; I++ {
+			TA[I] = A[I]
+			TB[I] = B[I]
+		}
+		for I := 2; I < 22; I++ {
+			A[I] = A0*TA[I] + A1*TA[I-1] + A2*TA[I-2]
+			B[I] = TB[I] - B1*TB[I-1] - B2*TB[I-2]
+		}
+	}
+
+	B[2] = 0
+	for I := 0; I < 20; I++ {
+		A[I] = A[I+2]
+		B[I] = -B[I+2]
+	}
+
+	SA := 0.0
+	SB := 0.0
+	for I := 0; I < 20; I++ {
+		if LH == 1 {
+			SA = SA + A[I]*math.Pow(-1, float64(I))
+			SB = SB + B[I]*math.Pow(-1, float64(I))
+			fmt.Printf("%f, SB=%f\n", SA, SB)
+		} else {
+			SA = SA + A[I]
+			SB = SB + B[I]
+		}
+	}
+
+	GAIN := SA / (1 - SB)
+	for I := 0; I < 20; I++ {
+		A[I] = A[I] / GAIN
+	}
+	for i := 0; i < int(object.NumSamples); i++ {
+		signal := make([]byte, object.SampleSize)
+		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		x *= GAIN
+		binary.LittleEndian.PutUint16(signal, uint16(x))
+		object.data[i] = signal
 	}
 }

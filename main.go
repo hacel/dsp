@@ -69,5 +69,19 @@ func main() {
 		track1.writeFile(*outfilename)
 
 		fmt.Printf("Compressed into %s.\n", *outfilename)
+
+	case "convolve":
+		file1 := flag.Arg(0)
+		fmt.Printf("Convolving...\n")
+
+		track1 := NewWAV()
+		track1.readFile(file1)
+
+		// track1.lowpass()
+		// track1.highpass()
+		// track1.windowedSinc()
+		track1.chebyshev()
+
+		track1.writeFile(*outfilename)
 	}
 }
