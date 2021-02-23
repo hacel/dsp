@@ -9,10 +9,13 @@ import (
 func main() {
 	operation := flag.String("op", "", "Operation: Mix, Normalize, Compress")
 	outfilename := flag.String("o", "out.wav", "Output file name")
-	dBFS := flag.Float64("db", 0.0, "dBFS")
-	ratio := flag.Int("R", 2, "Compression ratio")
+	dBFS := flag.Float64("db", -12.0, "dBFS")
+	ratio := flag.Float64("R", 2.0, "Compression ratio")
 	makeup := flag.Float64("m", 1.0, "Compression makeup")
-	kneeWidth := flag.Float64("W", 0.0, "Compression soft knee width")
+	kneeWidth := flag.Float64("W", -25.0, "Compression soft knee width")
+	att := flag.Float64("att", 10.0, "Compression attack time (ms)")
+	rel := flag.Float64("rel", 300.0, "Compression release time (ms)")
+
 	flag.Parse()
 
 	switch *operation {
@@ -58,14 +61,16 @@ func main() {
 		R := *ratio
 		W := *kneeWidth
 		m := *makeup
-		fmt.Printf("Compressing %s up to %f dBFS with %d ratio\n", path.Base(file1), T, R)
+		att := *att
+		rel := *rel
+		fmt.Printf("Compressing %s up to %f dBFS with %f ratio\n", path.Base(file1), T, R)
 
 		track1 := NewWAV()
 		track1.readFile(file1)
 		fmt.Printf("---------------\n%s details:\n", path.Base(file1))
 		track1.dumpHeader(true)
 
-		track1.compress(T, R, m, W)
+		track1.compress(T, R, att, rel, 3, 1, W, m)
 		track1.writeFile(*outfilename)
 
 		fmt.Printf("Compressed into %s.\n", *outfilename)
