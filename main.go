@@ -15,7 +15,8 @@ func main() {
 	kneeWidth := flag.Float64("W", -25.0, "Compression soft knee width")
 	att := flag.Float64("att", 10.0, "Compression attack time (ms)")
 	rel := flag.Float64("rel", 300.0, "Compression release time (ms)")
-
+	lh := flag.Int("lh", 0, "Low pass: 0, High pass: 1")
+	freq := flag.Float64("f", 1000.0, "Frequency cut off for filter")
 	flag.Parse()
 
 	switch *operation {
@@ -77,6 +78,8 @@ func main() {
 
 	case "convolve":
 		file1 := flag.Arg(0)
+		fc := *freq
+		lh := *lh
 		fmt.Printf("Convolving...\n")
 
 		track1 := NewWAV()
@@ -85,7 +88,8 @@ func main() {
 		// track1.lowpass()
 		// track1.highpass()
 		// track1.windowedSinc()
-		track1.chebyshev()
+		// track1.chebyshev()
+		track1.butterworth(fc, lh)
 
 		track1.writeFile(*outfilename)
 	}

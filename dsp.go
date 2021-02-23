@@ -293,6 +293,47 @@ func (object *WAV) lowpass() {
 	}
 }
 
+func (object *WAV) butterworth(fc float64, lh int) {
+	r := math.Sqrt(2) // Rez
+	sr := float64(object.sampleRate)
+	var c, a1, a2, a3, b1, b2 float64
+	if lh == 0 { // Low pass
+		c = 1.0 / math.Tan(math.Pi*fc/sr)
+		a1 = 1.0 / (1.0 + r*c + c*c)
+		a2 = 2 * a1
+		a3 = a1
+		b1 = 2.0 * (1.0 - c*c) * a1
+		b2 = (1.0 - r*c + c*c) * a1
+	} else { // High pass
+		c = math.Tan(math.Pi * fc / sr)
+		a1 = 1.0 / (1.0 + r*c + c*c)
+		a2 = -2 * a1
+		a3 = a1
+		b1 = 2.0 * (c*c - 1.0) * a1
+		b2 = (1.0 - r*c + c*c) * a1
+	}
+	var period []float64
+	for i := 0; i < int(object.NumSamples); i++ {
+		signal := make([]byte, object.SampleSize)
+		y := 0.0
+		x0 := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		if len(period) == 2 {
+			x1 := period[1]
+			x2 := period[0]
+			y1 := float64(int16(binary.LittleEndian.Uint16(object.data[i-1])))
+			y2 := float64(int16(binary.LittleEndian.Uint16(object.data[i-2])))
+			y = a1*x0 + a2*x1 + a3*x2 - b1*y1 - b2*y2
+			period = period[1:]
+		} else {
+			y = x0
+		}
+		period = append(period, x0)
+
+		binary.LittleEndian.PutUint16(signal, uint16(y))
+		object.data[i] = signal
+	}
+}
+
 func (object *WAV) windowedSinc() {
 	FC := 0.04
 	M := 100 // M = BW / 4
