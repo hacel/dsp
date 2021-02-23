@@ -183,46 +183,85 @@ func (object *WAV) normalize(desiredPeak float64) {
 	}
 }
 
-func (object *WAV) compress(thresh float64, R int, makeup float64, kneeWidth float64) {
-	T := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (thresh/20))
-	// W := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (kneeWidth/20))
-	// var period []float64
+func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup float64) {
+	threshold = math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, threshold/20)
+	sr := float64(object.sampleRate)
+	tatt *= math.Pow(10, -3) // attack time
+	trel *= math.Pow(10, -3) // release time
+	tla *= math.Pow(10, -3)  // rms lookahead offset
+	// twnd *= math.Pow(10, -3) // rms window size
+	W = math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (W/20))
+	var att, rel float64
+	if tatt == 0 {
+		att = 0.0
+	} else {
+		att = math.Exp(-1.0 / (sr * tatt))
+	}
+	if trel == 0 {
+		rel = 0.0
+	} else {
+		rel = math.Exp(-1.0 / (sr * trel))
+	}
+	env := 0.0
+	// lhsmp := sr * tla // sample offset in lookahead
+	// nrms := sr * twnd // sample count in window
+	nla := sr * tla
+
 	for i := 0; i < int(object.NumSamples); i++ {
-		signed := false
 		signal := make([]byte, object.SampleSize)
+		summ := 0.0
+		// for j := 0; j < int(nrms); j++ {
+		// 	lki := i + j + int(lhsmp)
+		// 	var smp float64
+		// 	if lki >= len(object.data) {
+		// 		smp = 0.0
+		// 	} else {
+		// 		smp = float64(int16(binary.LittleEndian.Uint16(object.data[lki])))
+		// 	}
+		// 	summ += math.Pow(smp, 2)
+		// }
+		// rms := math.Sqrt(summ / nrms)
+
+		for j := 0; j < int(nla); j++ {
+			var smp float64
+			if i+j >= len(object.data) {
+				smp = 0.0
+			} else {
+				smp = float64(int16(binary.LittleEndian.Uint16(object.data[i+j])))
+			}
+			summ += smp
+		}
+
+		peak := summ / nla
+		var theta float64
+		// if rms > env {
+		if peak > env {
+			theta = att
+		} else {
+			theta = rel
+		}
+		// env = ((1.0-theta)*rms + theta*env)
+		env = ((1.0-theta)*peak + theta*env)
+
+		var gain float64
+		// if env > threshold {
+		// 	gain = (threshold + (env-threshold)/ratio) / env
+		// } else {
+		// 	gain = 1.0
+		// }
+		if env-threshold < -W/2 {
+			gain = 1.0
+		} else if math.Abs(env-threshold) <= W/2 {
+			// env = env + ((1/ratio-1)*math.Pow(env-threshold+W/2, 2))/(W*2)
+			gain = (env + ((1/ratio-1)*math.Pow(env-threshold+W/2, 2))/(W*2)) / env
+		} else if env-threshold > W/2 {
+			// env = threshold + (env-threshold)/ratio
+			gain = (threshold + (env-threshold)/ratio) / env
+		}
+
 		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
-		if x < 0 {
-			signed = true
-			x = math.Abs(x)
-		}
-		// ----- RMS CALC
-		// if len(period) == int(object.sampleRate)/2000 {
-		// 	period = period[1:]
-		// }
-		// period = append(period, x)
-		// sigRMS := rms(period)
+		x *= gain
 
-		// ----- HARD RMS
-		// if sigRMS > T {
-		// 	x = T + (x-T)/float64(R)
-		// }
-
-		// ----- HARD PEAK
-		if x > T {
-			x = T + (x-T)/float64(R)
-		}
-
-		// ------ SMOOTH PEAK
-		// if x-T < -W/2 {
-		// } else if math.Abs(x-T) <= W/2 {
-		// 	x = x + ((1/float64(R)-1)*math.Pow(x-T+W/2, 2))/(W*2)
-		// } else if x-T > W/2 {
-		// 	x = T + (x-T)/float64(R)
-		// }
-
-		if signed {
-			x *= -1
-		}
 		binary.LittleEndian.PutUint16(signal, uint16(x))
 		object.data[i] = signal
 	}
