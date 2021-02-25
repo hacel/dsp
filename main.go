@@ -16,7 +16,9 @@ func main() {
 	att := flag.Float64("att", 10.0, "Compression attack time (ms)")
 	rel := flag.Float64("rel", 300.0, "Compression release time (ms)")
 	lh := flag.Int("lh", 0, "Low pass: 0, High pass: 1")
-	freq := flag.Float64("f", 1000.0, "Frequency cut off for filter")
+	freq := flag.Int("f", 5000, "Filter frequency cut off")
+	filter := flag.String("filter", "biquad", "Convolution filter selection (biquad, windowedsinc, average)")
+	bandwidth := flag.Int("b", 20, "Filter rolloff for certain filters")
 	flag.Parse()
 
 	switch *operation {
@@ -78,19 +80,34 @@ func main() {
 
 	case "convolve":
 		file1 := flag.Arg(0)
+		filter := *filter
 		fc := *freq
 		lh := *lh
-		fmt.Printf("Convolving...\n")
+		M := *bandwidth
 
 		track1 := NewWAV()
 		track1.readFile(file1)
 
-		// track1.lowpass()
-		// track1.highpass()
-		// track1.windowedSinc()
-		// track1.chebyshev()
-		track1.butterworth(fc, lh)
+		switch filter {
+		case "average":
+			fmt.Printf("Convolving using rolling average (M=%d)...\n", M)
+			track1.rollingAvgLowpass(M)
 
+		case "windowedsinc":
+			fmt.Printf("Convolving using Windowed-Sinc (fc=%d, M=%d)...\n", fc, M)
+			track1.windowedSinc(fc, M)
+
+		case "biquad":
+			fmt.Printf("Convolving using Biquad (fc=%d, lh=%d)...\n", fc, lh)
+			track1.biquad(fc, lh)
+
+		case "highpass":
+			fmt.Printf("Convolving using highpass...")
+			track1.highpass()
+
+		case "cheb":
+			// track1.chebyshev()
+		}
 		track1.writeFile(*outfilename)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"io"
 	"math"
 	"os"
+
+	"github.com/mjibson/go-dsp/fft"
 )
 
 func check(e error) {
@@ -45,7 +47,7 @@ type WAV struct {
 	bitsPerSample uint16
 	subchunk2ID   [4]byte
 	subchunk2Size uint32
-	data          [][]byte
+	data          []float64
 	// Calculated fields
 	NumSamples uint32
 	SampleSize uint16
@@ -77,7 +79,8 @@ func (object *WAV) read(r io.Reader) {
 	for i := 0; i < int(object.NumSamples); i++ {
 		x := make([]byte, int(object.SampleSize))
 		binary.Read(r, binary.LittleEndian, &x)
-		object.data = append(object.data, x)
+		smp := float64(int16(binary.LittleEndian.Uint16(x)))
+		object.data = append(object.data, smp)
 	}
 }
 
@@ -103,7 +106,9 @@ func (object *WAV) write(r io.Writer) {
 	binary.Write(r, binary.BigEndian, object.subchunk2ID)
 	binary.Write(r, binary.LittleEndian, object.subchunk2Size)
 	for i := 0; i < len(object.data); i++ {
-		binary.Write(r, binary.LittleEndian, object.data[i])
+		signal := make([]byte, object.SampleSize)
+		binary.LittleEndian.PutUint16(signal, uint16(object.data[i]))
+		binary.Write(r, binary.LittleEndian, signal)
 	}
 }
 
@@ -136,6 +141,20 @@ func (object *WAV) dumpHeader(more bool) {
 	}
 }
 
+func (object *WAV) getDFT() []complex128 {
+	return fft.FFTReal(object.data)
+}
+
+func getIDFT(dft []complex128) []complex128 {
+	return fft.IFFT(dft)
+}
+
+func (object *WAV) reconSignal(idft []complex128) {
+	for i := range object.data {
+		object.data[i] = real(idft[i])
+	}
+}
+
 func (object *WAV) mix(t1 *WAV, t2 *WAV) {
 	var longerTrack, shorterTrack *WAV
 	if t1.NumSamples >= t2.NumSamples {
@@ -147,20 +166,18 @@ func (object *WAV) mix(t1 *WAV, t2 *WAV) {
 	}
 	*object = *longerTrack
 	for i := 0; i < int(longerTrack.NumSamples); i++ {
-		signal := make([]byte, object.SampleSize)
-		var x int32
+		var x float64
 		if i < int(shorterTrack.NumSamples) {
-			x = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i]))) + int32(int16(binary.LittleEndian.Uint16(shorterTrack.data[i])))
+			x = longerTrack.data[i] + shorterTrack.data[i]
 		} else {
-			x = int32(int16(binary.LittleEndian.Uint16(longerTrack.data[i])))
+			x = longerTrack.data[i]
 		}
 		if x > 32767 {
 			x = 32767
 		} else if x < -32768 {
 			x = -32768
 		}
-		binary.LittleEndian.PutUint16(signal, uint16(x))
-		object.data[i] = signal
+		object.data[i] = x
 	}
 }
 
@@ -168,18 +185,16 @@ func (object *WAV) normalize(desiredPeak float64) {
 	base := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (desiredPeak/20))
 	var peak float64 = 0
 	for i := 0; i < int(object.NumSamples); i++ {
-		x := math.Abs(float64(int16(binary.LittleEndian.Uint16(object.data[i]))))
+		x := math.Abs(object.data[i])
 		if x > peak {
 			peak = x
 		}
 	}
 	normNum := base / peak
 	for i := 0; i < int(object.NumSamples); i++ {
-		signal := make([]byte, object.SampleSize)
-		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		x := object.data[i]
 		x *= normNum
-		binary.LittleEndian.PutUint16(signal, uint16(x))
-		object.data[i] = signal
+		object.data[i] = x
 	}
 }
 
@@ -208,7 +223,6 @@ func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup f
 	nla := sr * tla
 
 	for i := 0; i < int(object.NumSamples); i++ {
-		signal := make([]byte, object.SampleSize)
 		summ := 0.0
 		// for j := 0; j < int(nrms); j++ {
 		// 	lki := i + j + int(lhsmp)
@@ -216,7 +230,7 @@ func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup f
 		// 	if lki >= len(object.data) {
 		// 		smp = 0.0
 		// 	} else {
-		// 		smp = float64(int16(binary.LittleEndian.Uint16(object.data[lki])))
+		// 		smp = object.data[lki]
 		// 	}
 		// 	summ += math.Pow(smp, 2)
 		// }
@@ -227,7 +241,7 @@ func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup f
 			if i+j >= len(object.data) {
 				smp = 0.0
 			} else {
-				smp = float64(int16(binary.LittleEndian.Uint16(object.data[i+j])))
+				smp = object.data[i+j]
 			}
 			summ += smp
 		}
@@ -259,11 +273,10 @@ func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup f
 			gain = (threshold + (env-threshold)/ratio) / env
 		}
 
-		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		x := object.data[i]
 		x *= gain
 
-		binary.LittleEndian.PutUint16(signal, uint16(x))
-		object.data[i] = signal
+		object.data[i] = x
 	}
 	if makeup != 1.0 {
 		fmt.Printf("Normalizing...\n")
@@ -271,41 +284,38 @@ func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup f
 	}
 }
 
-func (object *WAV) lowpass() {
+func (object *WAV) rollingAvgLowpass(bandwidth int) {
 	var period []float64
 	for i := 0; i < int(object.NumSamples)-5; i++ {
-		signal := make([]byte, object.SampleSize)
-		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
-		// period = append(period, float64(int16(binary.LittleEndian.Uint16(v))))
+		x := object.data[i]
+		// period = append(period, v)
 		// if len(period) == 5 {
 		// 	period = period[1:]
 		// }
-		// period = append(period, float64(int16(binary.LittleEndian.Uint16(object.data[i+5]))))
+		// period = append(period, object.data[i+5])
 
-		if len(period) == 5 {
+		if len(period) == bandwidth {
 			period = period[1:]
 		}
 		period = append(period, x)
-		sigAvg := avg(period)
-
-		binary.LittleEndian.PutUint16(signal, uint16(sigAvg))
-		object.data[i] = signal
+		avg := avg(period)
+		object.data[i] = avg
 	}
 }
 
-func (object *WAV) butterworth(fc float64, lh int) {
+func (object *WAV) biquad(fc, lh int) {
 	r := math.Sqrt(2) // Rez
 	sr := float64(object.sampleRate)
 	var c, a1, a2, a3, b1, b2 float64
 	if lh == 0 { // Low pass
-		c = 1.0 / math.Tan(math.Pi*fc/sr)
+		c = 1.0 / math.Tan(math.Pi*float64(fc)/sr)
 		a1 = 1.0 / (1.0 + r*c + c*c)
 		a2 = 2 * a1
 		a3 = a1
 		b1 = 2.0 * (1.0 - c*c) * a1
 		b2 = (1.0 - r*c + c*c) * a1
 	} else { // High pass
-		c = math.Tan(math.Pi * fc / sr)
+		c = math.Tan(math.Pi * float64(fc) / sr)
 		a1 = 1.0 / (1.0 + r*c + c*c)
 		a2 = -2 * a1
 		a3 = a1
@@ -314,29 +324,29 @@ func (object *WAV) butterworth(fc float64, lh int) {
 	}
 	var period []float64
 	for i := 0; i < int(object.NumSamples); i++ {
-		signal := make([]byte, object.SampleSize)
 		y := 0.0
-		x0 := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		x0 := object.data[i]
 		if len(period) == 2 {
 			x1 := period[1]
 			x2 := period[0]
-			y1 := float64(int16(binary.LittleEndian.Uint16(object.data[i-1])))
-			y2 := float64(int16(binary.LittleEndian.Uint16(object.data[i-2])))
+			y1 := object.data[i-1]
+			y2 := object.data[i-2]
 			y = a1*x0 + a2*x1 + a3*x2 - b1*y1 - b2*y2
 			period = period[1:]
 		} else {
 			y = x0
 		}
 		period = append(period, x0)
-
-		binary.LittleEndian.PutUint16(signal, uint16(y))
-		object.data[i] = signal
+		object.data[i] = y
 	}
 }
 
-func (object *WAV) windowedSinc() {
-	FC := 0.04
-	M := 100 // M = BW / 4
+func (object *WAV) windowedSinc(cutoff, bandwidth int) {
+	if cutoff > int(object.sampleRate)/2 {
+		panic("Cutoff frequency too high.")
+	}
+	FC := float64(cutoff) / float64(object.sampleRate) // Cut off (freq/sample rate)
+	M := bandwidth                                     // Filter roll off
 	kernel := make([]float64, M)
 	for i := range kernel {
 		if i-M/2 == 0 {
@@ -353,18 +363,15 @@ func (object *WAV) windowedSinc() {
 	for i := range kernel {
 		kernel[i] /= sum
 	}
-
-	var filteredData [][]byte
+	var filteredData []float64
 	for j := M; j < int(object.NumSamples); j++ {
-		signal := make([]byte, object.SampleSize)
 		y := 0.0
 		x := 0.0
 		for i := range kernel {
-			x = float64(int16(binary.LittleEndian.Uint16(object.data[j-i])))
+			x = object.data[j-i]
 			y += x * kernel[i]
 		}
-		binary.LittleEndian.PutUint16(signal, uint16(y))
-		filteredData = append(filteredData, signal)
+		filteredData = append(filteredData, y)
 	}
 	object.data = filteredData
 }
@@ -372,21 +379,18 @@ func (object *WAV) windowedSinc() {
 func (object *WAV) highpass() {
 	var period []float64
 	for i := 0; i < int(object.NumSamples); i++ {
-		signal := make([]byte, object.SampleSize)
-		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
-
-		if len(period) == 3 {
+		var y float64
+		x := object.data[i]
+		if len(period) == 2 {
+			y = period[0] + -2*period[1] + x
 			period = period[1:]
-			x = x + period[len(period)-2] + -2*period[len(period)-1]
 		}
 		period = append(period, x)
-
-		binary.LittleEndian.PutUint16(signal, uint16(x))
-		object.data[i] = signal
+		object.data[i] = y
 	}
 }
 
-func cheb(FC, PR, LH, NP, P float64) (float64, float64, float64, float64, float64) {
+func _cheb(FC, PR, LH, NP, P float64) (float64, float64, float64, float64, float64) {
 	RP := -math.Cos(math.Pi/(NP*2) + (P-1)*math.Pi/NP)
 	IP := math.Sin(math.Pi/(NP*2) + (P-1)*math.Pi/NP)
 	if PR != 0 {
@@ -447,7 +451,7 @@ func (object *WAV) chebyshev() {
 	NP := 4.0 // Number of poles
 
 	for P := 2; float64(P) < NP/2; P++ {
-		A0, A1, A2, B1, B2 := cheb(FC, PR, LH, NP, float64(P))
+		A0, A1, A2, B1, B2 := _cheb(FC, PR, LH, NP, float64(P))
 		for I := 0; I < 22; I++ {
 			TA[I] = A[I]
 			TB[I] = B[I]
@@ -482,10 +486,8 @@ func (object *WAV) chebyshev() {
 		A[I] = A[I] / GAIN
 	}
 	for i := 0; i < int(object.NumSamples); i++ {
-		signal := make([]byte, object.SampleSize)
-		x := float64(int16(binary.LittleEndian.Uint16(object.data[i])))
+		x := object.data[i]
 		x *= GAIN
-		binary.LittleEndian.PutUint16(signal, uint16(x))
-		object.data[i] = signal
+		object.data[i] = x
 	}
 }

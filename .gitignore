@@ -18,3 +18,4 @@ audio/
 *.wav
 .DS_Store
 .vscode/
+test/
