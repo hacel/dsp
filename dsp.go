@@ -150,8 +150,18 @@ func getIDFT(dft []complex128) []complex128 {
 }
 
 func (object *WAV) reconSignal(idft []complex128) {
-	for i := range object.data {
-		object.data[i] = real(idft[i])
+	if len(object.data) < len(idft) {
+		i := 0
+		for ; i < len(object.data); i++ {
+			object.data[i] = real(idft[i])
+		}
+		for ; i < len(idft); i++ {
+			object.data = append(object.data, real(idft[i]))
+		}
+	} else {
+		for i := 0; i < len(object.data); i++ {
+			object.data[i] = real(idft[i])
+		}
 	}
 }
 
