@@ -40,3 +40,13 @@ func TestDFTReconstruction(t *testing.T) {
 		t.Errorf("got %f, wanted %f", got, want)
 	}
 }
+
+func BenchmarkDFTReconstruction(b *testing.B) {
+	track := NewWAV()
+	track.data = []float64{1.0, 2.0, 3.0}
+	for i := 0; i < b.N; i++ {
+		dft := track.GetDFT()
+		idft := GetIDFT(dft)
+		track.ReconSignal(idft)
+	}
+}
