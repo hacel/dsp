@@ -1,5 +1,5 @@
-# go-dsp
-Basic digital signal processor using Go
+# dsp
+Basic digital signal processor in Go
 
 ## Status
 | Func | Status  | Description | Notes |
