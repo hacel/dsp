@@ -24,7 +24,7 @@ func avg(val []float64) float64 {
 	return sum / float64(len(val))
 }
 
-func rms(val []float64) float64 { // THIS IS AVG?
+func rms(val []float64) float64 {
 	var sum float64
 	for _, s := range val {
 		sum += math.Pow(s, 2)
@@ -32,7 +32,7 @@ func rms(val []float64) float64 { // THIS IS AVG?
 	return math.Sqrt(sum / float64(len(val)))
 }
 
-// WAV is a struct to hold wave file format data
+// WAV is a struct to hold wave file format data.
 type WAV struct {
 	chunkID       [4]byte
 	chunkSize     uint32
@@ -54,118 +54,123 @@ type WAV struct {
 	Duration   float64
 }
 
-// NewWAV creates new WAV object and returns a pointer to it
+// NewWAV creates a new WAV object and returns a pointer to it.
 func NewWAV() *WAV {
 	return &WAV{}
 }
 
-func (object *WAV) read(r io.Reader) {
-	binary.Read(r, binary.BigEndian, &object.chunkID)
-	binary.Read(r, binary.LittleEndian, &object.chunkSize)
-	binary.Read(r, binary.BigEndian, &object.format)
-	binary.Read(r, binary.BigEndian, &object.subchunk1ID)
-	binary.Read(r, binary.LittleEndian, &object.subchunk1Size)
-	binary.Read(r, binary.LittleEndian, &object.audioFormat)
-	binary.Read(r, binary.LittleEndian, &object.numChannels)
-	binary.Read(r, binary.LittleEndian, &object.sampleRate)
-	binary.Read(r, binary.LittleEndian, &object.byteRate)
-	binary.Read(r, binary.LittleEndian, &object.blockAlign)
-	binary.Read(r, binary.LittleEndian, &object.bitsPerSample)
-	binary.Read(r, binary.BigEndian, &object.subchunk2ID)
-	binary.Read(r, binary.LittleEndian, &object.subchunk2Size)
-	object.NumSamples = (8 * object.subchunk2Size) / uint32((object.numChannels * object.bitsPerSample))
-	object.SampleSize = (object.numChannels * object.bitsPerSample) / 8
-	object.Duration = float64(object.subchunk2Size) / float64(object.byteRate)
-	for i := 0; i < int(object.NumSamples); i++ {
-		x := make([]byte, int(object.SampleSize))
+func (w *WAV) Read(r io.Reader) {
+	binary.Read(r, binary.BigEndian, &w.chunkID)
+	binary.Read(r, binary.LittleEndian, &w.chunkSize)
+	binary.Read(r, binary.BigEndian, &w.format)
+	binary.Read(r, binary.BigEndian, &w.subchunk1ID)
+	binary.Read(r, binary.LittleEndian, &w.subchunk1Size)
+	binary.Read(r, binary.LittleEndian, &w.audioFormat)
+	binary.Read(r, binary.LittleEndian, &w.numChannels)
+	binary.Read(r, binary.LittleEndian, &w.sampleRate)
+	binary.Read(r, binary.LittleEndian, &w.byteRate)
+	binary.Read(r, binary.LittleEndian, &w.blockAlign)
+	binary.Read(r, binary.LittleEndian, &w.bitsPerSample)
+	binary.Read(r, binary.BigEndian, &w.subchunk2ID)
+	binary.Read(r, binary.LittleEndian, &w.subchunk2Size)
+	w.NumSamples = (8 * w.subchunk2Size) / uint32((w.numChannels * w.bitsPerSample))
+	w.SampleSize = (w.numChannels * w.bitsPerSample) / 8
+	w.Duration = float64(w.subchunk2Size) / float64(w.byteRate)
+	for i := 0; i < int(w.NumSamples); i++ {
+		x := make([]byte, int(w.SampleSize))
 		binary.Read(r, binary.LittleEndian, &x)
 		smp := float64(int16(binary.LittleEndian.Uint16(x)))
-		object.data = append(object.data, smp)
+		w.data = append(w.data, smp)
 	}
 }
 
-func (object *WAV) readFile(path string) {
+// ReadFile takes a path string to a .wav file and passes it to Read which reads wav data from file into w.
+func (w *WAV) ReadFile(path string) {
 	f, err := os.Open(path)
 	check(err)
 	defer f.Close()
-	object.read(f)
+	w.Read(f)
 }
 
-func (object *WAV) write(r io.Writer) {
-	binary.Write(r, binary.BigEndian, object.chunkID)
-	binary.Write(r, binary.LittleEndian, object.chunkSize)
-	binary.Write(r, binary.BigEndian, object.format)
-	binary.Write(r, binary.BigEndian, object.subchunk1ID)
-	binary.Write(r, binary.LittleEndian, object.subchunk1Size)
-	binary.Write(r, binary.LittleEndian, object.audioFormat)
-	binary.Write(r, binary.LittleEndian, object.numChannels)
-	binary.Write(r, binary.LittleEndian, object.sampleRate)
-	binary.Write(r, binary.LittleEndian, object.byteRate)
-	binary.Write(r, binary.LittleEndian, object.blockAlign)
-	binary.Write(r, binary.LittleEndian, object.bitsPerSample)
-	binary.Write(r, binary.BigEndian, object.subchunk2ID)
-	binary.Write(r, binary.LittleEndian, object.subchunk2Size)
-	for i := 0; i < len(object.data); i++ {
-		signal := make([]byte, object.SampleSize)
-		binary.LittleEndian.PutUint16(signal, uint16(object.data[i]))
+func (w *WAV) Write(r io.Writer) {
+	binary.Write(r, binary.BigEndian, w.chunkID)
+	binary.Write(r, binary.LittleEndian, w.chunkSize)
+	binary.Write(r, binary.BigEndian, w.format)
+	binary.Write(r, binary.BigEndian, w.subchunk1ID)
+	binary.Write(r, binary.LittleEndian, w.subchunk1Size)
+	binary.Write(r, binary.LittleEndian, w.audioFormat)
+	binary.Write(r, binary.LittleEndian, w.numChannels)
+	binary.Write(r, binary.LittleEndian, w.sampleRate)
+	binary.Write(r, binary.LittleEndian, w.byteRate)
+	binary.Write(r, binary.LittleEndian, w.blockAlign)
+	binary.Write(r, binary.LittleEndian, w.bitsPerSample)
+	binary.Write(r, binary.BigEndian, w.subchunk2ID)
+	binary.Write(r, binary.LittleEndian, w.subchunk2Size)
+	for i := 0; i < len(w.data); i++ {
+		signal := make([]byte, w.SampleSize)
+		binary.LittleEndian.PutUint16(signal, uint16(w.data[i]))
 		binary.Write(r, binary.LittleEndian, signal)
 	}
 }
 
-func (object *WAV) writeFile(path string) {
+// WriteFile takes a path string to a .wav file and passes it to Write which writes w wav data into the file.
+func (w *WAV) WriteFile(path string) {
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
-	object.write(f)
+	w.Write(f)
 }
 
-func (object *WAV) dumpHeader(more bool) {
-	fmt.Printf("File size: %.2fKB\n", float64(object.chunkSize)/1000)
-	fmt.Printf("Number of samples: %d\n", object.NumSamples)
-	fmt.Printf("Size of each sample: %d bytes\n", object.SampleSize)
-	fmt.Printf("Duration of file: %fs\n", object.Duration)
+func (w *WAV) dumpHeader(more bool) {
+	fmt.Printf("File size: %.2fKB\n", float64(w.chunkSize)/1000)
+	fmt.Printf("Number of samples: %d\n", w.NumSamples)
+	fmt.Printf("Size of each sample: %d bytes\n", w.SampleSize)
+	fmt.Printf("Duration of file: %fs\n", w.Duration)
 	if more {
-		fmt.Printf("%-14s %s\n", "chunkID:", object.chunkID)
-		fmt.Printf("%-14s %d\n", "chunkSize:", object.chunkSize)
-		fmt.Printf("%-14s %s\n", "format:", object.format)
-		fmt.Printf("%-14s %s\n", "subchunk1ID:", object.subchunk1ID)
-		fmt.Printf("%-14s %d\n", "subchunk1Size:", object.subchunk1Size)
-		fmt.Printf("%-14s %d\n", "audioFormat:", object.audioFormat)
-		fmt.Printf("%-14s %d\n", "numChannels:", object.numChannels)
-		fmt.Printf("%-14s %d\n", "sampleRate:", object.sampleRate)
-		fmt.Printf("%-14s %d\n", "byteRate:", object.byteRate)
-		fmt.Printf("%-14s %d\n", "blockAlign:", object.blockAlign)
-		fmt.Printf("%-14s %d\n", "bitsPerSample:", object.bitsPerSample)
-		fmt.Printf("%-14s %s\n", "subchunk2ID:", object.subchunk2ID)
-		fmt.Printf("%-14s %d\n", "subchunk2Size:", object.subchunk2Size)
+		fmt.Printf("%-14s %s\n", "chunkID:", w.chunkID)
+		fmt.Printf("%-14s %d\n", "chunkSize:", w.chunkSize)
+		fmt.Printf("%-14s %s\n", "format:", w.format)
+		fmt.Printf("%-14s %s\n", "subchunk1ID:", w.subchunk1ID)
+		fmt.Printf("%-14s %d\n", "subchunk1Size:", w.subchunk1Size)
+		fmt.Printf("%-14s %d\n", "audioFormat:", w.audioFormat)
+		fmt.Printf("%-14s %d\n", "numChannels:", w.numChannels)
+		fmt.Printf("%-14s %d\n", "sampleRate:", w.sampleRate)
+		fmt.Printf("%-14s %d\n", "byteRate:", w.byteRate)
+		fmt.Printf("%-14s %d\n", "blockAlign:", w.blockAlign)
+		fmt.Printf("%-14s %d\n", "bitsPerSample:", w.bitsPerSample)
+		fmt.Printf("%-14s %s\n", "subchunk2ID:", w.subchunk2ID)
+		fmt.Printf("%-14s %d\n", "subchunk2Size:", w.subchunk2Size)
 	}
 }
 
-func (object *WAV) getDFT() []complex128 {
-	return fft.FFTReal(object.data)
+// GetDFT returns the DFT of w.
+func (w *WAV) GetDFT() []complex128 {
+	return fft.FFTReal(w.data)
 }
 
-func getIDFT(dft []complex128) []complex128 {
+// GetIDFT returns the Inverse DFT of dft.
+func GetIDFT(dft []complex128) []complex128 {
 	return fft.IFFT(dft)
 }
 
-func (object *WAV) reconSignal(idft []complex128) {
-	if len(object.data) < len(idft) {
+// ReconSignal reconstructs the signal data from idft into w.
+func (w *WAV) ReconSignal(idft []complex128) {
+	if len(w.data) < len(idft) {
 		i := 0
-		for ; i < len(object.data); i++ {
-			object.data[i] = real(idft[i])
+		for ; i < len(w.data); i++ {
+			w.data[i] = real(idft[i])
 		}
 		for ; i < len(idft); i++ {
-			object.data = append(object.data, real(idft[i]))
+			w.data = append(w.data, real(idft[i]))
 		}
 	} else {
-		for i := 0; i < len(object.data); i++ {
-			object.data[i] = real(idft[i])
+		for i := 0; i < len(w.data); i++ {
+			w.data[i] = real(idft[i])
 		}
 	}
 }
 
-func (object *WAV) mix(t1 *WAV, t2 *WAV) {
+func (w *WAV) mix(t1 *WAV, t2 *WAV) {
 	var longerTrack, shorterTrack *WAV
 	if t1.NumSamples >= t2.NumSamples {
 		longerTrack = t1
@@ -174,7 +179,7 @@ func (object *WAV) mix(t1 *WAV, t2 *WAV) {
 		longerTrack = t2
 		shorterTrack = t1
 	}
-	*object = *longerTrack
+	*w = *longerTrack
 	for i := 0; i < int(longerTrack.NumSamples); i++ {
 		var x float64
 		if i < int(shorterTrack.NumSamples) {
@@ -187,35 +192,34 @@ func (object *WAV) mix(t1 *WAV, t2 *WAV) {
 		} else if x < -32768 {
 			x = -32768
 		}
-		object.data[i] = x
+		w.data[i] = x
 	}
 }
 
-func (object *WAV) normalize(desiredPeak float64) {
-	base := math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (desiredPeak/20))
+func (w *WAV) normalize(desiredPeak float64) {
+	base := math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, (desiredPeak/20))
 	var peak float64 = 0
-	for i := 0; i < int(object.NumSamples); i++ {
-		x := math.Abs(object.data[i])
+	for i := 0; i < int(w.NumSamples); i++ {
+		x := math.Abs(w.data[i])
 		if x > peak {
 			peak = x
 		}
 	}
 	normNum := base / peak
-	for i := 0; i < int(object.NumSamples); i++ {
-		x := object.data[i]
+	for i := 0; i < int(w.NumSamples); i++ {
+		x := w.data[i]
 		x *= normNum
-		object.data[i] = x
+		w.data[i] = x
 	}
 }
 
-func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup float64) {
-	threshold = math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, threshold/20)
-	sr := float64(object.sampleRate)
+func (w *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup float64) {
+	threshold = math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, threshold/20)
+	sr := float64(w.sampleRate)
 	tatt *= math.Pow(10, -3) // attack time
 	trel *= math.Pow(10, -3) // release time
-	tla *= math.Pow(10, -3)  // rms lookahead offset
-	// twnd *= math.Pow(10, -3) // rms window size
-	W = math.Pow(2, float64(object.bitsPerSample-1)) * math.Pow(10, (W/20))
+	tla *= math.Pow(10, -3)  // lookahead
+	W = math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, (W/20))
 	var att, rel float64
 	if tatt == 0 {
 		att = 0.0
@@ -228,94 +232,65 @@ func (object *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup f
 		rel = math.Exp(-1.0 / (sr * trel))
 	}
 	env := 0.0
-	// lhsmp := sr * tla // sample offset in lookahead
-	// nrms := sr * twnd // sample count in window
 	nla := sr * tla
 
-	for i := 0; i < int(object.NumSamples); i++ {
+	for i := 0; i < int(w.NumSamples); i++ {
 		summ := 0.0
-		// for j := 0; j < int(nrms); j++ {
-		// 	lki := i + j + int(lhsmp)
-		// 	var smp float64
-		// 	if lki >= len(object.data) {
-		// 		smp = 0.0
-		// 	} else {
-		// 		smp = object.data[lki]
-		// 	}
-		// 	summ += math.Pow(smp, 2)
-		// }
-		// rms := math.Sqrt(summ / nrms)
-
 		for j := 0; j < int(nla); j++ {
 			var smp float64
-			if i+j >= len(object.data) {
+			if i+j >= len(w.data) {
 				smp = 0.0
 			} else {
-				smp = object.data[i+j]
+				smp = w.data[i+j]
 			}
 			summ += smp
 		}
 
 		peak := summ / nla
 		var theta float64
-		// if rms > env {
 		if peak > env {
 			theta = att
 		} else {
 			theta = rel
 		}
-		// env = ((1.0-theta)*rms + theta*env)
 		env = ((1.0-theta)*peak + theta*env)
 
 		var gain float64
-		// if env > threshold {
-		// 	gain = (threshold + (env-threshold)/ratio) / env
-		// } else {
-		// 	gain = 1.0
-		// }
 		if env-threshold < -W/2 {
 			gain = 1.0
 		} else if math.Abs(env-threshold) <= W/2 {
-			// env = env + ((1/ratio-1)*math.Pow(env-threshold+W/2, 2))/(W*2)
 			gain = (env + ((1/ratio-1)*math.Pow(env-threshold+W/2, 2))/(W*2)) / env
 		} else if env-threshold > W/2 {
-			// env = threshold + (env-threshold)/ratio
 			gain = (threshold + (env-threshold)/ratio) / env
 		}
 
-		x := object.data[i]
+		x := w.data[i]
 		x *= gain
 
-		object.data[i] = x
+		w.data[i] = x
 	}
 	if makeup != 1.0 {
 		fmt.Printf("Normalizing...\n")
-		object.normalize(makeup)
+		w.normalize(makeup)
 	}
 }
 
-func (object *WAV) rollingAvgLowpass(bandwidth int) {
+func (w *WAV) rollingAvgLowpass(bandwidth int) {
 	var period []float64
-	for i := 0; i < int(object.NumSamples)-5; i++ {
-		x := object.data[i]
-		// period = append(period, v)
-		// if len(period) == 5 {
-		// 	period = period[1:]
-		// }
-		// period = append(period, object.data[i+5])
-
+	for i := 0; i < int(w.NumSamples)-5; i++ {
+		x := w.data[i]
 		if len(period) == bandwidth {
 			period = period[1:]
 		}
 		period = append(period, x)
 		avg := avg(period)
-		object.data[i] = avg
+		w.data[i] = avg
 	}
 }
 
-func (object *WAV) biquad(fc, lh int) {
+func (w *WAV) biquad(fc, lh int) {
 	r := math.Sqrt(2) // Rez
-	sr := float64(object.sampleRate)
+	sr := float64(w.sampleRate)
 	var c, a1, a2, a3, b1, b2 float64
 	if lh == 0 { // Low pass
 		c = 1.0 / math.Tan(math.Pi*float64(fc)/sr)
@@ -333,30 +308,30 @@ func (object *WAV) biquad(fc, lh int) {
 		b2 = (1.0 - r*c + c*c) * a1
 	}
 	var period []float64
-	for i := 0; i < int(object.NumSamples); i++ {
+	for i := 0; i < int(w.NumSamples); i++ {
 		y := 0.0
-		x0 := object.data[i]
+		x0 := w.data[i]
 		if len(period) == 2 {
 			x1 := period[1]
 			x2 := period[0]
-			y1 := object.data[i-1]
-			y2 := object.data[i-2]
+			y1 := w.data[i-1]
+			y2 := w.data[i-2]
 			y = a1*x0 + a2*x1 + a3*x2 - b1*y1 - b2*y2
 			period = period[1:]
 		} else {
 			y = x0
 		}
 		period = append(period, x0)
-		object.data[i] = y
+		w.data[i] = y
 	}
 }
 
-func (object *WAV) windowedSinc(cutoff, bandwidth int) {
-	if cutoff > int(object.sampleRate)/2 {
+func (w *WAV) windowedSinc(cutoff, bandwidth int) {
+	if cutoff > int(w.sampleRate)/2 {
 		panic("Cutoff frequency too high.")
 	}
-	FC := float64(cutoff) / float64(object.sampleRate) // Cut off (freq/sample rate)
-	M := bandwidth                                     // Filter roll off
+	FC := float64(cutoff) / float64(w.sampleRate) // Cut off (freq/sample rate)
+	M := bandwidth                                // Filter roll off
 	kernel := make([]float64, M)
 	for i := range kernel {
 		if i-M/2 == 0 {
@@ -374,29 +349,29 @@ func (object *WAV) windowedSinc(cutoff, bandwidth int) {
 		kernel[i] /= sum
 	}
 	var filteredData []float64
-	for j := M; j < int(object.NumSamples); j++ {
+	for j := M; j < int(w.NumSamples); j++ {
 		y := 0.0
 		x := 0.0
 		for i := range kernel {
-			x = object.data[j-i]
+			x = w.data[j-i]
 			y += x * kernel[i]
 		}
 		filteredData = append(filteredData, y)
 	}
-	object.data = filteredData
+	w.data = filteredData
 }
 
-func (object *WAV) highpass() {
+func (w *WAV) highpass() {
 	var period []float64
-	for i := 0; i < int(object.NumSamples); i++ {
+	for i := 0; i < int(w.NumSamples); i++ {
 		var y float64
-		x := object.data[i]
+		x := w.data[i]
 		if len(period) == 2 {
 			y = period[0] + -2*period[1] + x
 			period = period[1:]
 		}
 		period = append(period, x)
-		object.data[i] = y
+		w.data[i] = y
 	}
 }
 
@@ -446,7 +421,7 @@ func _cheb(FC, PR, LH, NP, P float64) (float64, float64, float64, float64, float
 	return A0, A1, A2, B1, B2
 }
 
-func (object *WAV) chebyshev() {
+func (w *WAV) chebyshev() {
 	var A [22]float64
 	var B [22]float64
 	var TA [22]float64
@@ -495,9 +470,9 @@ func (object *WAV) chebyshev() {
 	for I := 0; I < 20; I++ {
 		A[I] = A[I] / GAIN
 	}
-	for i := 0; i < int(object.NumSamples); i++ {
-		x := object.data[i]
+	for i := 0; i < int(w.NumSamples); i++ {
+		x := w.data[i]
 		x *= GAIN
-		object.data[i] = x
+		w.data[i] = x
 	}
 }

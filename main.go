@@ -28,18 +28,18 @@ func main() {
 		fmt.Printf("Mixing %s and %s\n", path.Base(file1), path.Base(file2))
 
 		track1 := NewWAV()
-		track1.readFile(file1)
+		track1.ReadFile(file1)
 		fmt.Printf("---------------\n%s details:\n", path.Base(file1))
 		track1.dumpHeader(true)
 
 		track2 := NewWAV()
-		track2.readFile(file2)
+		track2.ReadFile(file2)
 		fmt.Printf("---------------\n%s details:\n", path.Base(file2))
 		track2.dumpHeader(true)
 
 		newTrack := NewWAV()
 		newTrack.mix(track1, track2)
-		newTrack.writeFile(*outfilename)
+		newTrack.WriteFile(*outfilename)
 
 		fmt.Printf("Mixed into %s.\n", *outfilename)
 
@@ -49,12 +49,12 @@ func main() {
 		fmt.Printf("Noramlizing %s to %f dBFS\n", path.Base(file1), desiredPeak)
 
 		track1 := NewWAV()
-		track1.readFile(file1)
+		track1.ReadFile(file1)
 		fmt.Printf("---------------\n%s details:\n", path.Base(file1))
 		track1.dumpHeader(true)
 
 		track1.normalize(desiredPeak)
-		track1.writeFile(*outfilename)
+		track1.WriteFile(*outfilename)
 
 		fmt.Printf("Normalized into %s.\n", *outfilename)
 
@@ -69,12 +69,12 @@ func main() {
 		fmt.Printf("Compressing %s up to %f dBFS with %f ratio\n", path.Base(file1), T, R)
 
 		track1 := NewWAV()
-		track1.readFile(file1)
+		track1.ReadFile(file1)
 		fmt.Printf("---------------\n%s details:\n", path.Base(file1))
 		track1.dumpHeader(true)
 
 		track1.compress(T, R, att, rel, 3, 1, W, m)
-		track1.writeFile(*outfilename)
+		track1.WriteFile(*outfilename)
 
 		fmt.Printf("Compressed into %s.\n", *outfilename)
 
@@ -86,7 +86,7 @@ func main() {
 		M := *bandwidth
 
 		track1 := NewWAV()
-		track1.readFile(file1)
+		track1.ReadFile(file1)
 
 		switch filter {
 		case "average":
