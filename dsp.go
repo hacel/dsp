@@ -73,11 +73,11 @@ func (w *WAV) Read(r io.Reader) {
 	binary.Read(r, binary.LittleEndian, &w.bitsPerSample)
 	binary.Read(r, binary.BigEndian, &w.subchunk2ID)
 	binary.Read(r, binary.LittleEndian, &w.subchunk2Size)
-	w.NumSamples = (8 * w.subchunk2Size) / uint32((w.numChannels * w.bitsPerSample))
+	w.NumSamples = (8 * w.subchunk2Size) / uint32(w.bitsPerSample)
 	w.SampleSize = (w.numChannels * w.bitsPerSample) / 8
 	w.Duration = float64(w.subchunk2Size) / float64(w.byteRate)
 	for i := 0; i < int(w.NumSamples); i++ {
-		x := make([]byte, int(w.SampleSize))
+		x := make([]byte, w.bitsPerSample/8)
 		binary.Read(r, binary.LittleEndian, &x)
 		smp := float64(int16(binary.LittleEndian.Uint16(x)))
 		w.data = append(w.data, smp)
@@ -106,8 +106,8 @@ func (w *WAV) Write(r io.Writer) {
 	binary.Write(r, binary.LittleEndian, w.bitsPerSample)
 	binary.Write(r, binary.BigEndian, w.subchunk2ID)
 	binary.Write(r, binary.LittleEndian, w.subchunk2Size)
-	for i := 0; i < len(w.data); i++ {
-		signal := make([]byte, w.SampleSize)
+	for i := 0; i < int(w.NumSamples); i++ {
+		signal := make([]byte, w.bitsPerSample/8)
 		binary.LittleEndian.PutUint16(signal, uint16(w.data[i]))
 		binary.Write(r, binary.LittleEndian, signal)
 	}
@@ -122,11 +122,12 @@ func (w *WAV) WriteFile(path string) {
 }
 
 func (w *WAV) dumpHeader(more bool) {
-	fmt.Printf("File size: %.2fKB\n", float64(w.chunkSize)/1000)
-	fmt.Printf("Number of samples: %d\n", w.NumSamples)
-	fmt.Printf("Size of each sample: %d bytes\n", w.SampleSize)
-	fmt.Printf("Duration of file: %fs\n", w.Duration)
+	fmt.Printf("%-14s %.2fKB\n", "File size:", float64(w.chunkSize)/1000)
+	fmt.Printf("%-14s %.2fs\n", "Duration:", w.Duration)
+	fmt.Printf("%-14s %d\n", "Sample rate:", w.sampleRate)
 	if more {
+		fmt.Printf("Size of each sample: %d bytes\n", w.SampleSize)
+		fmt.Printf("Number of samples: %d\n", w.NumSamples)
 		fmt.Printf("%-14s %s\n", "chunkID:", w.chunkID)
 		fmt.Printf("%-14s %d\n", "chunkSize:", w.chunkSize)
 		fmt.Printf("%-14s %s\n", "format:", w.format)
@@ -134,7 +135,6 @@ func (w *WAV) dumpHeader(more bool) {
 		fmt.Printf("%-14s %d\n", "subchunk1Size:", w.subchunk1Size)
 		fmt.Printf("%-14s %d\n", "audioFormat:", w.audioFormat)
 		fmt.Printf("%-14s %d\n", "numChannels:", w.numChannels)
-		fmt.Printf("%-14s %d\n", "sampleRate:", w.sampleRate)
 		fmt.Printf("%-14s %d\n", "byteRate:", w.byteRate)
 		fmt.Printf("%-14s %d\n", "blockAlign:", w.blockAlign)
 		fmt.Printf("%-14s %d\n", "bitsPerSample:", w.bitsPerSample)
@@ -213,7 +213,7 @@ func (w *WAV) normalize(desiredPeak float64) {
 	}
 }
 
-func (w *WAV) compress(threshold, ratio, tatt, trel, tla, twnd, W, makeup float64) {
+func (w *WAV) compress(threshold, ratio, tatt, trel, tla, W, makeup float64) {
 	threshold = math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, threshold/20)
 	sr := float64(w.sampleRate)
 	tatt *= math.Pow(10, -3) // attack time

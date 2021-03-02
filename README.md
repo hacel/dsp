@@ -1,5 +1,5 @@
 # dsp
-Basic digital signal processor in Go
+Basic 16-bit PCM digital signal processor in Go
 
 ## Status
 | Func | Status  | Description | Notes |
