@@ -1,4 +1,4 @@
-package main
+package dsp
 
 import (
 	"encoding/binary"
@@ -6,8 +6,6 @@ import (
 	"io"
 	"math"
 	"os"
-
-	"github.com/mjibson/go-dsp/fft"
 )
 
 func check(e error) {
@@ -32,8 +30,8 @@ func rms(val []float64) float64 {
 	return math.Sqrt(sum / float64(len(val)))
 }
 
-// WAV is a struct to hold wave file format data.
-type WAV struct {
+// Wav is a struct to hold wav data.
+type Wav struct {
 	chunkID       [4]byte
 	chunkSize     uint32
 	format        [4]byte
@@ -48,18 +46,19 @@ type WAV struct {
 	subchunk2ID   [4]byte
 	subchunk2Size uint32
 	data          []float64
-	// Calculated fields
+	// Derived fields
 	NumSamples uint32
 	SampleSize uint16
 	Duration   float64
 }
 
-// NewWAV creates a new WAV object and returns a pointer to it.
-func NewWAV() *WAV {
-	return &WAV{}
+// NewWav returns a new Wav struct.
+func NewWav() *Wav {
+	return &Wav{}
 }
 
-func (w *WAV) Read(r io.Reader) {
+// Read reads binary data from an io.Reader into Wav.
+func (w *Wav) Read(r io.Reader) {
 	binary.Read(r, binary.BigEndian, &w.chunkID)
 	binary.Read(r, binary.LittleEndian, &w.chunkSize)
 	binary.Read(r, binary.BigEndian, &w.format)
@@ -84,15 +83,16 @@ func (w *WAV) Read(r io.Reader) {
 	}
 }
 
-// ReadFile takes a path string to a .wav file and passes it to Read which reads wav data from file into w.
-func (w *WAV) ReadFile(path string) {
+// ReadFile opens the given file string and passes it to Read.
+func (w *Wav) ReadFile(path string) {
 	f, err := os.Open(path)
 	check(err)
 	defer f.Close()
 	w.Read(f)
 }
 
-func (w *WAV) Write(r io.Writer) {
+// Write writes Wav data into an io.Writer as binary.
+func (w *Wav) Write(r io.Writer) {
 	binary.Write(r, binary.BigEndian, w.chunkID)
 	binary.Write(r, binary.LittleEndian, w.chunkSize)
 	binary.Write(r, binary.BigEndian, w.format)
@@ -113,15 +113,16 @@ func (w *WAV) Write(r io.Writer) {
 	}
 }
 
-// WriteFile takes a path string to a .wav file and passes it to Write which writes w wav data into the file.
-func (w *WAV) WriteFile(path string) {
+// WriteFile opens the given file string and passes it to Write
+func (w *Wav) WriteFile(path string) {
 	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
 	w.Write(f)
 }
 
-func (w *WAV) dumpHeader(more bool) {
+// DumpHeader prints Wav header information.
+func (w *Wav) DumpHeader(more bool) {
 	fmt.Printf("%-14s %.2fKB\n", "File size:", float64(w.chunkSize)/1000)
 	fmt.Printf("%-14s %.2fs\n", "Duration:", w.Duration)
 	fmt.Printf("%-14s %d\n", "Sample rate:", w.sampleRate)
@@ -143,18 +144,8 @@ func (w *WAV) dumpHeader(more bool) {
 	}
 }
 
-// GetDFT returns the DFT of w.
-func (w *WAV) GetDFT() []complex128 {
-	return fft.FFTReal(w.data)
-}
-
-// GetIDFT returns the Inverse DFT of dft.
-func GetIDFT(dft []complex128) []complex128 {
-	return fft.IFFT(dft)
-}
-
-// ReconSignal reconstructs the signal data from idft into w.
-func (w *WAV) ReconSignal(idft []complex128) {
+// ReconSignal reconstructs signal data into Wav from a given inverse DFT.
+func (w *Wav) ReconSignal(idft []complex128) {
 	if len(w.data) < len(idft) {
 		i := 0
 		for ; i < len(w.data); i++ {
@@ -170,8 +161,9 @@ func (w *WAV) ReconSignal(idft []complex128) {
 	}
 }
 
-func (w *WAV) mix(t1 *WAV, t2 *WAV) {
-	var longerTrack, shorterTrack *WAV
+// Mix mixes two tracks into one.
+func (w *Wav) Mix(t1 *Wav, t2 *Wav) {
+	var longerTrack, shorterTrack *Wav
 	if t1.NumSamples >= t2.NumSamples {
 		longerTrack = t1
 		shorterTrack = t2
@@ -196,7 +188,8 @@ func (w *WAV) mix(t1 *WAV, t2 *WAV) {
 	}
 }
 
-func (w *WAV) normalize(desiredPeak float64) {
+// Normalize normalizes a track according to the desired peak in dBFS.
+func (w *Wav) Normalize(desiredPeak float64) {
 	base := math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, (desiredPeak/20))
 	var peak float64 = 0
 	for i := 0; i < int(w.NumSamples); i++ {
@@ -213,13 +206,14 @@ func (w *WAV) normalize(desiredPeak float64) {
 	}
 }
 
-func (w *WAV) compress(threshold, ratio, tatt, trel, tla, W, makeup float64) {
+// Compress is a dynamic range compressor.
+func (w *Wav) Compress(threshold, ratio, tatt, trel, tla, knee, gain float64, makeup bool) {
 	threshold = math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, threshold/20)
 	sr := float64(w.sampleRate)
 	tatt *= math.Pow(10, -3) // attack time
 	trel *= math.Pow(10, -3) // release time
 	tla *= math.Pow(10, -3)  // lookahead
-	W = math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, (W/20))
+	knee = math.Pow(2, float64(w.bitsPerSample-1)) * math.Pow(10, (knee/20))
 	var att, rel float64
 	if tatt == 0 {
 		att = 0.0
@@ -256,11 +250,11 @@ func (w *WAV) compress(threshold, ratio, tatt, trel, tla, W, makeup float64) {
 		env = ((1.0-theta)*peak + theta*env)
 
 		var gain float64
-		if env-threshold < -W/2 {
+		if env-threshold < -knee/2 {
 			gain = 1.0
-		} else if math.Abs(env-threshold) <= W/2 {
-			gain = (env + ((1/ratio-1)*math.Pow(env-threshold+W/2, 2))/(W*2)) / env
-		} else if env-threshold > W/2 {
+		} else if math.Abs(env-threshold) <= knee/2 {
+			gain = (env + ((1/ratio-1)*math.Pow(env-threshold+knee/2, 2))/(knee*2)) / env
+		} else if env-threshold > knee/2 {
 			gain = (threshold + (env-threshold)/ratio) / env
 		}
 
@@ -269,13 +263,14 @@ func (w *WAV) compress(threshold, ratio, tatt, trel, tla, W, makeup float64) {
 
 		w.data[i] = x
 	}
-	if makeup != 1.0 {
+	if makeup {
 		fmt.Printf("Normalizing...\n")
-		w.normalize(makeup)
+		w.Normalize(gain)
 	}
 }
 
-func (w *WAV) rollingAvgLowpass(bandwidth int) {
+// RollingAvgLowpass is a low pass filter using rolling average.
+func (w *Wav) RollingAvgLowpass(bandwidth int) {
 	var period []float64
 	for i := 0; i < int(w.NumSamples)-5; i++ {
 		x := w.data[i]
@@ -288,7 +283,8 @@ func (w *WAV) rollingAvgLowpass(bandwidth int) {
 	}
 }
 
-func (w *WAV) biquad(fc, lh int) {
+// Biquad is an implementation of the Biquad filter
+func (w *Wav) Biquad(fc, lh int) {
 	r := math.Sqrt(2) // Rez
 	sr := float64(w.sampleRate)
 	var c, a1, a2, a3, b1, b2 float64
@@ -326,7 +322,8 @@ func (w *WAV) biquad(fc, lh int) {
 	}
 }
 
-func (w *WAV) windowedSinc(cutoff, bandwidth int) {
+// WindowedSinc is a Hamming windowed-sinc  low pass filter
+func (w *Wav) WindowedSinc(cutoff, bandwidth int) {
 	if cutoff > int(w.sampleRate)/2 {
 		panic("Cutoff frequency too high.")
 	}
@@ -361,7 +358,8 @@ func (w *WAV) windowedSinc(cutoff, bandwidth int) {
 	w.data = filteredData
 }
 
-func (w *WAV) highpass() {
+// Highpass is a basic highpass filter
+func (w *Wav) Highpass() {
 	var period []float64
 	for i := 0; i < int(w.NumSamples); i++ {
 		var y float64
@@ -375,6 +373,7 @@ func (w *WAV) highpass() {
 	}
 }
 
+// Chebyshev sub routine
 func _cheb(FC, PR, LH, NP, P float64) (float64, float64, float64, float64, float64) {
 	RP := -math.Cos(math.Pi/(NP*2) + (P-1)*math.Pi/NP)
 	IP := math.Sin(math.Pi/(NP*2) + (P-1)*math.Pi/NP)
@@ -421,7 +420,9 @@ func _cheb(FC, PR, LH, NP, P float64) (float64, float64, float64, float64, float
 	return A0, A1, A2, B1, B2
 }
 
-func (w *WAV) chebyshev() {
+// Chebyshev is an implementation of the Chebyshev filter
+// WIP
+func (w *Wav) Chebyshev() {
 	var A [22]float64
 	var B [22]float64
 	var TA [22]float64

@@ -1,9 +1,11 @@
-package main
+package dsp
 
 import (
 	"fmt"
 	"math"
 	"testing"
+
+	"github.com/mjibson/go-dsp/fft"
 )
 
 const (
@@ -28,10 +30,10 @@ func floatSliceEqual(a, b []float64) bool {
 }
 
 func TestDFTReconstruction(t *testing.T) {
-	track := NewWAV()
+	track := NewWav()
 	track.data = []float64{1.0, 2.0, 3.0}
-	dft := track.GetDFT()
-	idft := GetIDFT(dft)
+	dft := fft.FFTReal(track.data)
+	idft := fft.IFFT(dft)
 	track.ReconSignal(idft)
 
 	got := track.data
@@ -42,11 +44,11 @@ func TestDFTReconstruction(t *testing.T) {
 }
 
 func BenchmarkDFTReconstruction(b *testing.B) {
-	track := NewWAV()
+	track := NewWav()
 	track.data = []float64{1.0, 2.0, 3.0}
 	for i := 0; i < b.N; i++ {
-		dft := track.GetDFT()
-		idft := GetIDFT(dft)
+		dft := fft.FFTReal(track.data)
+		idft := fft.IFFT(dft)
 		track.ReconSignal(idft)
 	}
 }

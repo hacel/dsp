@@ -14,12 +14,27 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
-package main
+package cmd
 
 import (
-	"dsp/cmd"
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	cmd.Execute()
+var (
+	outFile string
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "dsp",
+	Short: "A digital signal processor",
+	Long:  `A basic digital signal processor built using Go`,
+}
+
+// Execute adds all child commands to the root command and sets flags appropriately.
+func Execute() {
+	cobra.CheckErr(rootCmd.Execute())
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVarP(&outFile, "out", "o", "./out.wav", "output file")
 }
